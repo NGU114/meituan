@@ -31,3 +31,10 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local Runtime ###
+data/
+*.db
+*.mv.db
+*.trace.db
+.DS_Store
