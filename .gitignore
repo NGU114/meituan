@@ -2,3 +2,7 @@ node_modules/
 dist/
 .vite/
 .DS_Store
+
+front-end/node_modules/
+front-end/dist/
+.idea/
