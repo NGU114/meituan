@@ -32,4 +32,7 @@ public class UserAccount extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private RoleType role;
+
+    @Column
+    private Boolean enabled = true;
 }

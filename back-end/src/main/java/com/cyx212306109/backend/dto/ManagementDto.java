@@ -14,7 +14,7 @@ public final class ManagementDto {
     private ManagementDto() {
     }
 
-    public record UserResponse(Long id, String username, String displayName, String phone, RoleType role) {
+    public record UserResponse(Long id, String username, String displayName, String phone, RoleType role, Boolean enabled) {
     }
 
     public record ShopResponse(
@@ -24,6 +24,15 @@ public final class ManagementDto {
             BigDecimal deliveryFee,
             BigDecimal minOrderAmount,
             Boolean open
+    ) {
+    }
+
+    public record CategoryResponse(
+            Long id,
+            Long shopId,
+            String shopName,
+            String name,
+            Integer sortOrder
     ) {
     }
 
@@ -55,6 +64,18 @@ public final class ManagementDto {
             @DecimalMin(value = "0.0", message = "起送价不能小于 0")
             BigDecimal minOrderAmount,
             Boolean open
+    ) {
+    }
+
+    public record CategoryUpsertRequest(
+            @NotNull(message = "店铺不能为空")
+            Long shopId,
+            @NotBlank(message = "分类名称不能为空")
+            @Size(max = 32, message = "分类名称不能超过 32")
+            String name,
+            @NotNull(message = "排序不能为空")
+            @Min(value = 0, message = "排序不能小于 0")
+            Integer sortOrder
     ) {
     }
 

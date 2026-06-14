@@ -7,7 +7,10 @@ public enum OrderStatus {
     PREPARING("制作中"),
     READY_FOR_DELIVERY("待配送"),
     DELIVERING("配送中"),
+    DELIVERED("已送达"),
     COMPLETED("已完成"),
+    REFUND_REQUESTED("退款申请中"),
+    REFUNDED("已退款"),
     CANCELLED("已取消");
 
     private final String label;

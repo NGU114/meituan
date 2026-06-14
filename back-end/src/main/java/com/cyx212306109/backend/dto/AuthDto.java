@@ -1,9 +1,12 @@
 package com.cyx212306109.backend.dto;
 
 import com.cyx212306109.backend.enums.RoleType;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+
+import java.math.BigDecimal;
 
 public final class AuthDto {
 
@@ -22,7 +25,16 @@ public final class AuthDto {
             String displayName,
             @NotBlank(message = "手机号不能为空")
             @Pattern(regexp = "^1\\d{10}$", message = "手机号格式不正确")
-            String phone
+            String phone,
+            RoleType role,
+            @Size(max = 64, message = "店铺名称不能超过 64")
+            String shopName,
+            @Size(max = 255, message = "店铺公告不能超过 255")
+            String shopAnnouncement,
+            @DecimalMin(value = "0.0", message = "配送费不能小于 0")
+            BigDecimal deliveryFee,
+            @DecimalMin(value = "0.0", message = "起送价不能小于 0")
+            BigDecimal minOrderAmount
     ) {
     }
 

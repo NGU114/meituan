@@ -6,6 +6,7 @@ import com.cyx212306109.backend.auth.RequireRole;
 import com.cyx212306109.backend.auth.UserContext;
 import com.cyx212306109.backend.common.BusinessException;
 import com.cyx212306109.backend.enums.RoleType;
+import com.cyx212306109.backend.repository.UserAccountRepository;
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -23,9 +24,11 @@ import java.util.stream.Collectors;
 public class AuthInterceptor implements HandlerInterceptor {
 
     private final JwtService jwtService;
+    private final UserAccountRepository userAccountRepository;
 
-    public AuthInterceptor(JwtService jwtService) {
+    public AuthInterceptor(JwtService jwtService, UserAccountRepository userAccountRepository) {
         this.jwtService = jwtService;
+        this.userAccountRepository = userAccountRepository;
     }
 
     @Override
@@ -39,6 +42,12 @@ public class AuthInterceptor implements HandlerInterceptor {
             String token = authHeader.substring(7);
             try {
                 CurrentUser currentUser = jwtService.parseToken(token);
+                boolean enabled = userAccountRepository.findById(currentUser.id())
+                        .map(user -> !Boolean.FALSE.equals(user.getEnabled()))
+                        .orElse(false);
+                if (!enabled) {
+                    throw new BusinessException(HttpStatus.FORBIDDEN, "账号已被禁用，请联系管理员");
+                }
                 UserContext.set(currentUser);
             } catch (JwtException | IllegalArgumentException exception) {
                 throw new BusinessException(HttpStatus.UNAUTHORIZED, "登录信息已失效，请重新登录");

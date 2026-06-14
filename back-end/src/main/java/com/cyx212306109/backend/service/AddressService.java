@@ -53,6 +53,33 @@ public class AddressService {
     }
 
     @Transactional
+    public AddressDto.AddressResponse update(Long addressId, AddressDto.UpdateRequest request) {
+        Long userId = UserContext.getRequired().id();
+        UserAddress address = userAddressRepository.findByIdAndUserId(addressId, userId)
+                .orElseThrow(() -> new BusinessException("地址不存在"));
+
+        if (Boolean.TRUE.equals(request.defaultAddress())) {
+            resetDefaultAddress(userId);
+        }
+
+        address.setContactName(request.contactName());
+        address.setContactPhone(request.contactPhone());
+        address.setDetailAddress(request.detailAddress());
+        address.setDefaultAddress(Boolean.TRUE.equals(request.defaultAddress()));
+        return toResponse(address);
+    }
+
+    @Transactional
+    public AddressDto.AddressResponse makeDefault(Long addressId) {
+        Long userId = UserContext.getRequired().id();
+        UserAddress address = userAddressRepository.findByIdAndUserId(addressId, userId)
+                .orElseThrow(() -> new BusinessException("地址不存在"));
+        resetDefaultAddress(userId);
+        address.setDefaultAddress(true);
+        return toResponse(address);
+    }
+
+    @Transactional
     public void delete(Long addressId) {
         Long userId = UserContext.getRequired().id();
         UserAddress address = userAddressRepository.findByIdAndUserId(addressId, userId)
