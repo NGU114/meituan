@@ -41,6 +41,27 @@ public final class OrderDto {
     public record CommentResponse(Integer rating, String content, String userName, LocalDateTime createdAt) {
     }
 
+    public record MerchantCommentResponse(
+            Long orderId,
+            String orderNo,
+            Long shopId,
+            String shopName,
+            Integer rating,
+            String content,
+            String userName,
+            LocalDateTime createdAt
+    ) {
+    }
+
+    public record TimelineResponse(
+            String status,
+            String label,
+            LocalDateTime time,
+            Boolean reached,
+            Boolean current
+    ) {
+    }
+
     public record OrderSummaryResponse(
             Long id,
             String orderNo,
@@ -72,6 +93,7 @@ public final class OrderDto {
             String riderName,
             Boolean commented,
             LocalDateTime createdAt,
+            List<TimelineResponse> timeline,
             List<OrderItemResponse> items,
             CommentResponse comment
     ) {

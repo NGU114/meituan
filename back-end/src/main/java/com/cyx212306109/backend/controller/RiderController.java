@@ -34,8 +34,18 @@ public class RiderController {
         return ApiResponse.ok(orderService.listRiderOrders());
     }
 
+    @GetMapping("/{orderId}")
+    public ApiResponse<OrderDto.OrderDetailResponse> detail(@PathVariable Long orderId) {
+        return ApiResponse.ok(orderService.riderOrderDetail(orderId));
+    }
+
     @PostMapping("/{orderId}/take")
     public ApiResponse<OrderDto.OrderDetailResponse> take(@PathVariable Long orderId) {
         return ApiResponse.ok("接单成功", orderService.riderTakeOrder(orderId));
+    }
+
+    @PostMapping("/{orderId}/delivered")
+    public ApiResponse<OrderDto.OrderDetailResponse> delivered(@PathVariable Long orderId) {
+        return ApiResponse.ok("订单已送达", orderService.riderMarkDelivered(orderId));
     }
 }

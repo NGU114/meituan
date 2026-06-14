@@ -49,6 +49,45 @@ public class MerchantService {
         return toShopResponse(shop);
     }
 
+    public List<ManagementDto.CategoryResponse> listMyCategories() {
+        Long merchantId = UserContext.getRequired().id();
+        return shopRepository.findByMerchantIdOrderByIdAsc(merchantId).stream()
+                .flatMap(shop -> productCategoryRepository.findByShopIdOrderBySortOrderAscIdAsc(shop.getId()).stream())
+                .map(this::toCategoryResponse)
+                .toList();
+    }
+
+    @Transactional
+    public ManagementDto.CategoryResponse createCategory(ManagementDto.CategoryUpsertRequest request) {
+        Shop shop = getMyShop(request.shopId());
+        ProductCategory category = new ProductCategory();
+        category.setShop(shop);
+        applyCategory(category, request);
+        productCategoryRepository.save(category);
+        return toCategoryResponse(category);
+    }
+
+    @Transactional
+    public ManagementDto.CategoryResponse updateCategory(Long categoryId, ManagementDto.CategoryUpsertRequest request) {
+        ProductCategory category = getMyCategory(categoryId);
+        Shop shop = getMyShop(request.shopId());
+        if (!category.getShop().getId().equals(shop.getId()) && productRepository.existsByCategoryId(categoryId)) {
+            throw new BusinessException("分类下还有菜品，不能移动到其他店铺");
+        }
+        category.setShop(shop);
+        applyCategory(category, request);
+        return toCategoryResponse(category);
+    }
+
+    @Transactional
+    public void deleteCategory(Long categoryId) {
+        ProductCategory category = getMyCategory(categoryId);
+        if (productRepository.existsByCategoryId(categoryId)) {
+            throw new BusinessException("分类下还有菜品，不能删除");
+        }
+        productCategoryRepository.delete(category);
+    }
+
     public List<ManagementDto.ProductResponse> listMyProducts() {
         Long merchantId = UserContext.getRequired().id();
         return productRepository.findByShopMerchantIdOrderByShopIdAscCategoryIdAscIdAsc(merchantId).stream()
@@ -85,6 +124,18 @@ public class MerchantService {
         return toProductResponse(product);
     }
 
+    @Transactional
+    public ManagementDto.ProductResponse disableProduct(Long productId) {
+        Product product = getMyProduct(productId);
+        product.setEnabled(false);
+        return toProductResponse(product);
+    }
+
+    private void applyCategory(ProductCategory category, ManagementDto.CategoryUpsertRequest request) {
+        category.setName(request.name());
+        category.setSortOrder(request.sortOrder());
+    }
+
     private void applyProduct(Product product, ManagementDto.ProductUpsertRequest request) {
         product.setName(request.name());
         product.setDescription(request.description());
@@ -101,6 +152,24 @@ public class MerchantService {
             throw new BusinessException(HttpStatus.FORBIDDEN, "不能操作其他商家的店铺");
         }
         return shop;
+    }
+
+    private ProductCategory getMyCategory(Long categoryId) {
+        ProductCategory category = productCategoryRepository.findById(categoryId)
+                .orElseThrow(() -> new BusinessException("分类不存在"));
+        if (!category.getShop().getMerchant().getId().equals(UserContext.getRequired().id())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "不能操作其他商家的分类");
+        }
+        return category;
+    }
+
+    private Product getMyProduct(Long productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new BusinessException("菜品不存在"));
+        if (!product.getShop().getMerchant().getId().equals(UserContext.getRequired().id())) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "不能操作其他商家的菜品");
+        }
+        return product;
     }
 
     private ProductCategory getCategory(Shop shop, Long categoryId) {
@@ -120,6 +189,16 @@ public class MerchantService {
                 shop.getDeliveryFee(),
                 shop.getMinOrderAmount(),
                 shop.getOpen()
+        );
+    }
+
+    private ManagementDto.CategoryResponse toCategoryResponse(ProductCategory category) {
+        return new ManagementDto.CategoryResponse(
+                category.getId(),
+                category.getShop().getId(),
+                category.getShop().getName(),
+                category.getName(),
+                category.getSortOrder()
         );
     }
 

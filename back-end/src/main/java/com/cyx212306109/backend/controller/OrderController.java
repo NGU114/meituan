@@ -41,6 +41,11 @@ public class OrderController {
         return ApiResponse.ok("订单已取消", orderService.cancelOrder(orderId));
     }
 
+    @PostMapping("/{orderId}/refund")
+    public ApiResponse<OrderDto.OrderDetailResponse> refund(@PathVariable Long orderId) {
+        return ApiResponse.ok("退款申请已提交", orderService.requestRefund(orderId));
+    }
+
     @PostMapping("/{orderId}/confirm")
     public ApiResponse<OrderDto.OrderDetailResponse> confirm(@PathVariable Long orderId) {
         return ApiResponse.ok("确认收货成功", orderService.confirmReceived(orderId));

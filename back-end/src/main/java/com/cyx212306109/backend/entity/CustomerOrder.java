@@ -14,6 +14,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Getter
 @Setter
@@ -41,6 +42,10 @@ public class CustomerOrder extends BaseEntity {
     @Column(nullable = false, length = 32)
     private OrderStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(length = 32)
+    private OrderStatus refundPreviousStatus;
+
     @Column(nullable = false, precision = 10, scale = 2)
     private BigDecimal goodsAmount;
 
@@ -64,4 +69,37 @@ public class CustomerOrder extends BaseEntity {
 
     @Column(nullable = false)
     private Boolean commented = false;
+
+    @Column
+    private LocalDateTime paidAt;
+
+    @Column
+    private LocalDateTime acceptedAt;
+
+    @Column
+    private LocalDateTime preparingAt;
+
+    @Column
+    private LocalDateTime readyAt;
+
+    @Column
+    private LocalDateTime deliveringAt;
+
+    @Column
+    private LocalDateTime deliveredAt;
+
+    @Column
+    private LocalDateTime completedAt;
+
+    @Column
+    private LocalDateTime cancelledAt;
+
+    @Column
+    private LocalDateTime refundRequestedAt;
+
+    @Column
+    private LocalDateTime refundedAt;
+
+    @Column
+    private LocalDateTime refundRejectedAt;
 }

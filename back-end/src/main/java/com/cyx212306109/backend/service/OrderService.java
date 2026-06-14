@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
@@ -119,17 +120,30 @@ public class OrderService {
         CustomerOrder order = getMyOrder(orderId);
         assertStatus(order, OrderStatus.PENDING_PAYMENT, "只有待支付订单才能支付");
         order.setStatus(OrderStatus.PAID);
+        order.setPaidAt(LocalDateTime.now());
         return buildOrderDetail(order);
     }
 
     @Transactional
     public OrderDto.OrderDetailResponse cancelOrder(Long orderId) {
         CustomerOrder order = getMyOrder(orderId);
-        if (!(order.getStatus() == OrderStatus.PENDING_PAYMENT || order.getStatus() == OrderStatus.PAID)) {
-            throw new BusinessException("当前订单状态不允许取消");
-        }
+        assertStatus(order, OrderStatus.PENDING_PAYMENT, "已支付订单请申请退款，当前状态不允许取消");
         restoreStock(order);
         order.setStatus(OrderStatus.CANCELLED);
+        order.setCancelledAt(LocalDateTime.now());
+        return buildOrderDetail(order);
+    }
+
+    @Transactional
+    public OrderDto.OrderDetailResponse requestRefund(Long orderId) {
+        CustomerOrder order = getMyOrder(orderId);
+        if (!canRequestRefund(order.getStatus())) {
+            throw new BusinessException("当前订单状态不允许申请退款");
+        }
+        order.setRefundPreviousStatus(order.getStatus());
+        order.setStatus(OrderStatus.REFUND_REQUESTED);
+        order.setRefundRequestedAt(LocalDateTime.now());
+        order.setRefundRejectedAt(null);
         return buildOrderDetail(order);
     }
 
@@ -147,8 +161,9 @@ public class OrderService {
     @Transactional
     public OrderDto.OrderDetailResponse confirmReceived(Long orderId) {
         CustomerOrder order = getMyOrder(orderId);
-        assertStatus(order, OrderStatus.DELIVERING, "只有配送中的订单才能确认收货");
+        assertStatus(order, OrderStatus.DELIVERED, "只有已送达订单才能确认收货");
         order.setStatus(OrderStatus.COMPLETED);
+        order.setCompletedAt(LocalDateTime.now());
         return buildOrderDetail(order);
     }
 
@@ -177,11 +192,23 @@ public class OrderService {
                 .toList();
     }
 
+    public List<OrderDto.MerchantCommentResponse> listMerchantComments() {
+        Long merchantId = UserContext.getRequired().id();
+        return orderCommentRepository.findByOrderShopMerchantIdOrderByIdDesc(merchantId).stream()
+                .map(this::buildMerchantCommentResponse)
+                .toList();
+    }
+
+    public OrderDto.OrderDetailResponse merchantOrderDetail(Long orderId) {
+        return buildOrderDetail(getMerchantOrder(orderId));
+    }
+
     @Transactional
     public OrderDto.OrderDetailResponse merchantAccept(Long orderId) {
         CustomerOrder order = getMerchantOrder(orderId);
         assertStatus(order, OrderStatus.PAID, "只有已支付订单才能接单");
         order.setStatus(OrderStatus.ACCEPTED);
+        order.setAcceptedAt(LocalDateTime.now());
         return buildOrderDetail(order);
     }
 
@@ -191,6 +218,7 @@ public class OrderService {
         assertStatus(order, OrderStatus.PAID, "只有已支付订单才能拒单");
         restoreStock(order);
         order.setStatus(OrderStatus.CANCELLED);
+        order.setCancelledAt(LocalDateTime.now());
         return buildOrderDetail(order);
     }
 
@@ -199,6 +227,7 @@ public class OrderService {
         CustomerOrder order = getMerchantOrder(orderId);
         assertStatus(order, OrderStatus.ACCEPTED, "只有已接单订单才能开始制作");
         order.setStatus(OrderStatus.PREPARING);
+        order.setPreparingAt(LocalDateTime.now());
         return buildOrderDetail(order);
     }
 
@@ -207,6 +236,31 @@ public class OrderService {
         CustomerOrder order = getMerchantOrder(orderId);
         assertStatus(order, OrderStatus.PREPARING, "只有制作中订单才能标记待配送");
         order.setStatus(OrderStatus.READY_FOR_DELIVERY);
+        order.setReadyAt(LocalDateTime.now());
+        return buildOrderDetail(order);
+    }
+
+    @Transactional
+    public OrderDto.OrderDetailResponse merchantApproveRefund(Long orderId) {
+        CustomerOrder order = getMerchantOrder(orderId);
+        assertStatus(order, OrderStatus.REFUND_REQUESTED, "只有退款申请中的订单才能同意退款");
+        restoreStock(order);
+        order.setStatus(OrderStatus.REFUNDED);
+        order.setRefundedAt(LocalDateTime.now());
+        return buildOrderDetail(order);
+    }
+
+    @Transactional
+    public OrderDto.OrderDetailResponse merchantRejectRefund(Long orderId) {
+        CustomerOrder order = getMerchantOrder(orderId);
+        assertStatus(order, OrderStatus.REFUND_REQUESTED, "只有退款申请中的订单才能拒绝退款");
+        OrderStatus previousStatus = order.getRefundPreviousStatus();
+        if (previousStatus == null || previousStatus == OrderStatus.REFUND_REQUESTED || previousStatus == OrderStatus.REFUNDED) {
+            previousStatus = OrderStatus.PAID;
+        }
+        order.setStatus(previousStatus);
+        order.setRefundRejectedAt(LocalDateTime.now());
+        order.setRefundPreviousStatus(null);
         return buildOrderDetail(order);
     }
 
@@ -223,6 +277,18 @@ public class OrderService {
                 .toList();
     }
 
+    public OrderDto.OrderDetailResponse riderOrderDetail(Long orderId) {
+        Long riderId = UserContext.getRequired().id();
+        CustomerOrder order = customerOrderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("订单不存在"));
+        boolean available = order.getStatus() == OrderStatus.READY_FOR_DELIVERY;
+        boolean mine = order.getRider() != null && order.getRider().getId().equals(riderId);
+        if (!available && !mine) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "不能查看该配送订单");
+        }
+        return buildOrderDetail(order);
+    }
+
     @Transactional
     public OrderDto.OrderDetailResponse riderTakeOrder(Long orderId) {
         Long riderId = UserContext.getRequired().id();
@@ -232,6 +298,16 @@ public class OrderService {
         UserAccount rider = getUser(riderId);
         order.setRider(rider);
         order.setStatus(OrderStatus.DELIVERING);
+        order.setDeliveringAt(LocalDateTime.now());
+        return buildOrderDetail(order);
+    }
+
+    @Transactional
+    public OrderDto.OrderDetailResponse riderMarkDelivered(Long orderId) {
+        CustomerOrder order = getMyRiderOrder(orderId);
+        assertStatus(order, OrderStatus.DELIVERING, "只有配送中的订单才能标记已送达");
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setDeliveredAt(LocalDateTime.now());
         return buildOrderDetail(order);
     }
 
@@ -245,6 +321,25 @@ public class OrderService {
         CustomerOrder order = customerOrderRepository.findById(orderId)
                 .orElseThrow(() -> new BusinessException("订单不存在"));
         return buildOrderDetail(order);
+    }
+
+    @Transactional
+    public void adminDeleteOrder(Long orderId) {
+        CustomerOrder order = customerOrderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("订单不存在"));
+        orderCommentRepository.deleteByOrderId(order.getId());
+        orderItemRepository.deleteByOrderId(order.getId());
+        customerOrderRepository.delete(order);
+    }
+
+    private CustomerOrder getMyRiderOrder(Long orderId) {
+        Long riderId = UserContext.getRequired().id();
+        CustomerOrder order = customerOrderRepository.findById(orderId)
+                .orElseThrow(() -> new BusinessException("订单不存在"));
+        if (order.getRider() == null || !order.getRider().getId().equals(riderId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "不能操作其他骑手的订单");
+        }
+        return order;
     }
 
     private CustomerOrder getMyOrder(Long orderId) {
@@ -269,7 +364,7 @@ public class OrderService {
     }
 
     private void restoreStock(CustomerOrder order) {
-        if (order.getStatus() == OrderStatus.CANCELLED) {
+        if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.REFUNDED) {
             return;
         }
         orderItemRepository.findByOrderIdOrderByIdAsc(order.getId()).forEach(item -> {
@@ -278,6 +373,13 @@ public class OrderService {
                 productRepository.save(product);
             });
         });
+    }
+
+    private boolean canRequestRefund(OrderStatus status) {
+        return status == OrderStatus.PAID
+                || status == OrderStatus.ACCEPTED
+                || status == OrderStatus.PREPARING
+                || status == OrderStatus.READY_FOR_DELIVERY;
     }
 
     private void assertStatus(CustomerOrder order, OrderStatus expected, String message) {
@@ -336,13 +438,103 @@ public class OrderService {
                 order.getRider() == null ? null : order.getRider().getDisplayName(),
                 order.getCommented(),
                 order.getCreatedAt(),
+                buildTimeline(order),
                 items,
                 commentResponse
         );
     }
 
+    private List<OrderDto.TimelineResponse> buildTimeline(CustomerOrder order) {
+        List<OrderStatus> normalSteps = List.of(
+                OrderStatus.PENDING_PAYMENT,
+                OrderStatus.PAID,
+                OrderStatus.ACCEPTED,
+                OrderStatus.PREPARING,
+                OrderStatus.READY_FOR_DELIVERY,
+                OrderStatus.DELIVERING,
+                OrderStatus.DELIVERED,
+                OrderStatus.COMPLETED
+        );
+        int currentIndex = normalSteps.indexOf(order.getStatus());
+        List<OrderDto.TimelineResponse> timeline = new java.util.ArrayList<>();
+        for (int index = 0; index < normalSteps.size(); index++) {
+            OrderStatus status = normalSteps.get(index);
+            LocalDateTime time = statusTime(order, status);
+            boolean reached = order.getStatus() == OrderStatus.CANCELLED
+                    || order.getStatus() == OrderStatus.REFUND_REQUESTED
+                    || order.getStatus() == OrderStatus.REFUNDED
+                    ? status == OrderStatus.PENDING_PAYMENT || time != null
+                    : currentIndex >= index;
+            timeline.add(new OrderDto.TimelineResponse(
+                    status.name(),
+                    status.getLabel(),
+                    time,
+                    reached,
+                    order.getStatus() == status
+            ));
+        }
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            timeline.add(new OrderDto.TimelineResponse(
+                    OrderStatus.CANCELLED.name(),
+                    OrderStatus.CANCELLED.getLabel(),
+                    order.getCancelledAt(),
+                    true,
+                    true
+            ));
+        }
+        if (order.getRefundRequestedAt() != null) {
+            timeline.add(new OrderDto.TimelineResponse(
+                    OrderStatus.REFUND_REQUESTED.name(),
+                    OrderStatus.REFUND_REQUESTED.getLabel(),
+                    order.getRefundRequestedAt(),
+                    true,
+                    order.getStatus() == OrderStatus.REFUND_REQUESTED
+            ));
+        }
+        if (order.getStatus() == OrderStatus.REFUNDED) {
+            timeline.add(new OrderDto.TimelineResponse(
+                    OrderStatus.REFUNDED.name(),
+                    OrderStatus.REFUNDED.getLabel(),
+                    order.getRefundedAt(),
+                    true,
+                    true
+            ));
+        }
+        return timeline;
+    }
+
+    private LocalDateTime statusTime(CustomerOrder order, OrderStatus status) {
+        return switch (status) {
+            case PENDING_PAYMENT -> order.getCreatedAt();
+            case PAID -> order.getPaidAt();
+            case ACCEPTED -> order.getAcceptedAt();
+            case PREPARING -> order.getPreparingAt();
+            case READY_FOR_DELIVERY -> order.getReadyAt();
+            case DELIVERING -> order.getDeliveringAt();
+            case DELIVERED -> order.getDeliveredAt();
+            case COMPLETED -> order.getCompletedAt();
+            case REFUND_REQUESTED -> order.getRefundRequestedAt();
+            case REFUNDED -> order.getRefundedAt();
+            case CANCELLED -> order.getCancelledAt();
+        };
+    }
+
     private OrderDto.CommentResponse buildCommentResponse(OrderComment comment) {
         return new OrderDto.CommentResponse(
+                comment.getRating(),
+                comment.getContent(),
+                comment.getUser().getDisplayName(),
+                comment.getCreatedAt()
+        );
+    }
+
+    private OrderDto.MerchantCommentResponse buildMerchantCommentResponse(OrderComment comment) {
+        CustomerOrder order = comment.getOrder();
+        return new OrderDto.MerchantCommentResponse(
+                order.getId(),
+                order.getOrderNo(),
+                order.getShop().getId(),
+                order.getShop().getName(),
                 comment.getRating(),
                 comment.getContent(),
                 comment.getUser().getDisplayName(),
